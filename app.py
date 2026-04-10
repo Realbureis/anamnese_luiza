@@ -79,11 +79,10 @@ with tab1:
 with tab2:
     st.subheader("Marcação Corporal e Facial")
     
-    # LÓGICA DE CAMINHO ABSOLUTO PARA A IMAGEM
     is_masculino = str(dados.get('sexo_m')).lower() in ['true', '1.0', '1', 'sim']
     nome_arquivo = "homem.png" if is_masculino else "mulher.png"
     
-    # Pega o caminho da pasta onde o app.py está
+    # Caminho absoluto para garantir que o Streamlit ache o arquivo
     diretorio_atual = os.path.dirname(os.path.abspath(__file__))
     caminho_imagem = os.path.join(diretorio_atual, nome_arquivo)
     
@@ -93,30 +92,29 @@ with tab2:
     with c_canvas:
         if os.path.exists(caminho_imagem):
             try:
-                img_aberta = Image.open(caminho_imagem)
-                bg_image = img_aberta.convert("RGB")
+                # SOLUÇÃO PARA O ERRO: Abrimos a imagem apenas para pegar o tamanho
+                img_aux = Image.open(caminho_imagem)
+                largura, altura = img_aux.size
                 
-                # Usando as dimensões reais da sua imagem redimensionada
-                largura, altura = bg_image.size
+                st.caption(f"Silhueta: {nome_arquivo} ({largura}x{altura})")
                 
-                st.caption(f"Silhueta carregada: {nome_arquivo} ({largura}x{altura})")
-                
+                # Passamos a imagem "pura" (img_aux) para o componente
                 canvas_result = st_canvas(
                     fill_color="rgba(255, 75, 75, 0.3)",
                     stroke_width=2,
                     stroke_color="#FF4B4B",
-                    background_image=bg_image,
+                    background_image=img_aux, # Aqui o canvas se encarrega da conversão
                     update_streamlit=True,
                     height=altura,
                     width=largura,
                     drawing_mode="point",
-                    key=f"canvas_{paciente_selecionado}_{nome_arquivo}", # Chave dinâmica evita cache
+                    key=f"canv_{paciente_selecionado}_{nome_arquivo}", # Chave curta
                 )
             except Exception as e:
                 st.error(f"Erro ao processar imagem: {e}")
+                st.info("Dica: Tente recarregar a página (F5).")
         else:
-            st.error(f"Arquivo não encontrado no servidor: {caminho_imagem}")
-            st.info("Verifique se as imagens estão na mesma pasta do app.py no GitHub.")
+            st.error(f"Arquivo não encontrado: {nome_arquivo}")
 
     with c_form:
         st.markdown("### 📝 Nova Medida")
@@ -142,7 +140,7 @@ with tab2:
                     st.balloons()
                     st.success("Salvo com sucesso!")
                 except:
-                    st.error("Erro ao salvar. Verifique a aba 'Medidas' na planilha.")
+                    st.error("Erro ao salvar. Verifique se a aba 'Medidas' existe.")
         else:
             st.info("Clique na silhueta para marcar.")
 
