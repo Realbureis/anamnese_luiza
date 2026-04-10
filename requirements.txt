@@ -1,6 +1,0 @@
-streamlit
-streamlit-gsheets
-st-gsheets-connection
-streamlit-drawable-canvas
-Pillow
-pandas
