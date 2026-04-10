@@ -4,6 +4,8 @@ from streamlit_drawable_canvas import st_canvas
 from PIL import Image
 import pandas as pd
 import os
+import base64
+from io import BytesIO
 
 # 1. Configuração da Página
 st.set_page_config(
@@ -11,6 +13,12 @@ st.set_page_config(
     page_icon="🩺",
     layout="wide"
 )
+
+# Funções Auxiliares para resolver o erro de imagem
+def get_image_base64(img):
+    buffered = BytesIO()
+    img.save(buffered, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buffered.getvalue()).decode()
 
 # 2. Conexão com Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -82,7 +90,6 @@ with tab2:
     is_masculino = str(dados.get('sexo_m')).lower() in ['true', '1.0', '1', 'sim']
     nome_arquivo = "homem.png" if is_masculino else "mulher.png"
     
-    # Caminho absoluto para garantir que o Streamlit ache o arquivo
     diretorio_atual = os.path.dirname(os.path.abspath(__file__))
     caminho_imagem = os.path.join(diretorio_atual, nome_arquivo)
     
@@ -92,27 +99,27 @@ with tab2:
     with c_canvas:
         if os.path.exists(caminho_imagem):
             try:
-                # SOLUÇÃO PARA O ERRO: Abrimos a imagem apenas para pegar o tamanho
                 img_aux = Image.open(caminho_imagem)
                 largura, altura = img_aux.size
                 
+                # TRANSFORMA IMAGEM EM STRING (Resolve o erro image_to_url)
+                img_base64 = get_image_base64(img_aux)
+                
                 st.caption(f"Silhueta: {nome_arquivo} ({largura}x{altura})")
                 
-                # Passamos a imagem "pura" (img_aux) para o componente
                 canvas_result = st_canvas(
                     fill_color="rgba(255, 75, 75, 0.3)",
                     stroke_width=2,
                     stroke_color="#FF4B4B",
-                    background_image=img_aux, # Aqui o canvas se encarrega da conversão
+                    background_image=img_aux, 
                     update_streamlit=True,
                     height=altura,
                     width=largura,
                     drawing_mode="point",
-                    key=f"canv_{paciente_selecionado}_{nome_arquivo}", # Chave curta
+                    key=f"canvas_final_{paciente_selecionado}_{nome_arquivo}",
                 )
             except Exception as e:
                 st.error(f"Erro ao processar imagem: {e}")
-                st.info("Dica: Tente recarregar a página (F5).")
         else:
             st.error(f"Arquivo não encontrado: {nome_arquivo}")
 
