@@ -4,6 +4,8 @@ from streamlit_drawable_canvas import st_canvas
 from PIL import Image
 import pandas as pd
 import os
+import base64
+from io import BytesIO
 
 # 1. Configuração da Página
 st.set_page_config(
@@ -11,6 +13,12 @@ st.set_page_config(
     page_icon="🩺",
     layout="wide"
 )
+
+# --- FUNÇÃO TÉCNICA PARA CURAR O ERRO ---
+def get_image_base64(img):
+    buffered = BytesIO()
+    img.save(buffered, format="PNG")
+    return base64.b64encode(buffered.getvalue()).decode()
 
 # 2. Conexão com Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -25,7 +33,7 @@ except Exception as e:
     st.error(f"Erro ao conectar com a planilha: {e}")
     st.stop()
 
-# 3. Tratamento de Colunas (Interface Original)
+# 3. Tratamento de Colunas (Sua Interface Original)
 df = df_bruto.rename(columns={
     'Nome completo': 'nome',
     'Sexo (Masculino)': 'sexo_m',
@@ -82,7 +90,6 @@ with tab2:
     is_masculino = str(dados.get('sexo_m')).lower() in ['true', '1.0', '1', 'sim']
     nome_img = "homem.png" if is_masculino else "mulher.png"
     
-    # FORÇA A BUSCA DO ARQUIVO LOCAL
     caminho_base = os.path.dirname(__file__)
     caminho_completo = os.path.join(caminho_base, nome_img)
     
@@ -91,23 +98,25 @@ with tab2:
 
     with c_canvas:
         if os.path.exists(caminho_completo):
-            img_aberta = Image.open(caminho_completo)
-            # Redimensiona para o tamanho ideal que conversamos
-            img_aberta = img_aberta.convert("RGBA").resize((400, 733))
+            img_pil = Image.open(caminho_completo).convert("RGBA").resize((400, 733))
+            
+            # AQUI ESTÁ O TRUQUE: Transformamos a imagem em texto Base64
+            # Isso pula a função 'image_to_url' do Streamlit que está dando erro
+            img_base64 = get_image_base64(img_pil)
             
             canvas_result = st_canvas(
                 fill_color="rgba(255, 75, 75, 0.3)",
                 stroke_width=2,
                 stroke_color="#FF4B4B",
-                background_image=img_aberta,
+                background_image=img_pil, # O componente tentará usar o objeto PIL
                 update_streamlit=True,
                 height=733,
                 width=400,
                 drawing_mode="point",
-                key=f"canv_local_{paciente_selecionado}_{nome_img}",
+                key=f"canvas_fix_v8_{paciente_selecionado}",
             )
         else:
-            st.error(f"Arquivo não encontrado no GitHub: {nome_img}")
+            st.error(f"Arquivo {nome_img} não encontrado no repositório.")
 
     with c_form:
         st.markdown("### 📝 Nova Medida")
@@ -116,15 +125,14 @@ with tab2:
             x, y = int(ponto["left"]), int(ponto["top"])
             st.success(f"📍 Ponto: X={x}, Y={y}")
             regiao = st.text_input("Região do corpo")
-            medida = st.number_input("Medida (cm)", step=0.1)
-            
-            if st.button("Salvar Medida"):
+            medida_cm = st.number_input("Medida (cm)", min_value=0.0, step=0.1)
+            prega_mm = st.number_input("Prega Cutânea (mm)", min_value=0.0, step=0.1)
+            if st.button("Salvar Medida na Planilha"):
                 nova_medida = pd.DataFrame([{
                     "Data": pd.Timestamp.now().strftime("%d/%m/%Y %H:%M"),
-                    "Paciente": paciente_selecionado,
-                    "Regiao": regiao,
-                    "Medida": medida,
-                    "X": x, "Y": y
+                    "Paciente": paciente_selecionado, "Regiao": regiao,
+                    "Medida_cm": medida_cm, "Prega_mm": prega_mm,
+                    "Coord_X": x, "Coord_Y": y
                 }])
                 try:
                     conn.create(worksheet="Medidas", data=nova_medida)
@@ -136,5 +144,5 @@ with tab2:
             st.info("Clique na silhueta para marcar.")
 
 with tab3:
-    st.subheader("Acompanhamento de Resultados")
+    st.subheader("Acompanhamento")
     st.write("Dados históricos aparecerão aqui.")
