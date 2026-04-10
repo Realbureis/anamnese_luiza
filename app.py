@@ -17,7 +17,6 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 def load_data():
     # URL direta para corrigir o erro 'Spreadsheet must be specified'
     url = "https://docs.google.com/spreadsheets/d/1SzYK2ocbSLisKk5oxEyqANNS8m3wZ4gcoLGSiFMNsQM/edit?usp=sharing"
-    # ttl="0" garante que novos envios do Tally apareçam ao atualizar a página
     return conn.read(spreadsheet=url, ttl="0")
 
 try:
@@ -27,7 +26,6 @@ except Exception as e:
     st.stop()
 
 # 3. Tratamento e Mapeamento de Colunas
-# Aqui limpamos os nomes das colunas que vêm do Tally para facilitar o uso
 df = df_bruto.rename(columns={
     'Nome completo': 'nome',
     'Sexo (Masculino)': 'sexo_m',
@@ -41,20 +39,18 @@ df = df_bruto.rename(columns={
     'Submitted at': 'data_envio'
 })
 
-# --- SIDEBAR (Barra Lateral) ---
+# --- SIDEBAR ---
 st.sidebar.title("🩺 Gestão de Pacientes")
-# Garante que a lista de pacientes esteja limpa
 lista_pacientes = sorted(df['nome'].dropna().unique())
 paciente_selecionado = st.sidebar.selectbox("Selecione o Paciente", lista_pacientes)
 
-# Filtrar dados do paciente específico
 dados = df[df['nome'] == paciente_selecionado].iloc[0]
 
 # --- CABEÇALHO ---
 st.title(f"Prontuário Digital: {paciente_selecionado}")
 st.caption(f"Dados sincronizados via Tally | Última Anamnese: {dados['data_envio']}")
 
-# --- DIVISÃO EM ABAS ---
+# --- ABAS ---
 tab1, tab2, tab3 = st.tabs(["📋 Ficha de Anamnese", "📐 Mapa de Medidas", "📊 Evolução"])
 
 with tab1:
@@ -63,7 +59,6 @@ with tab1:
     
     with col1:
         st.info("🩺 Condições Clínicas")
-        # Checagem flexível para valores 'True', '1' ou 'Sim'
         if str(dados.get('doenca_sim')).lower() in ['true', '1.0', '1', 'sim']:
             st.error(f"**Doença Relatada:** {dados.get('doenca_detalhe', 'Ver na planilha')}")
         else:
@@ -90,15 +85,17 @@ with tab1:
 with tab2:
     st.subheader("Marcação Corporal e Facial")
     
-    # Lógica de Troca de Imagem por Sexo
     is_masculino = str(dados.get('sexo_m')).lower() in ['true', '1.0', '1', 'sim']
     imagem_path = "homem.png" if is_masculino else "mulher.png"
     
     c_canvas, c_form = st.columns([1.5, 1])
     
     with c_canvas:
+        # RESOLUÇÃO DO PROBLEMA DA IMAGEM: Try/Except + Conversão RGB
         try:
-            bg_image = Image.open(imagem_path)
+            img_aberta = Image.open(imagem_path)
+            bg_image = img_aberta.convert("RGB") # Remove metadados que causam erro
+            
             st.caption(f"Silhueta exibida: {'Masculina' if is_masculino else 'Feminina'}")
             
             canvas_result = st_canvas(
@@ -112,13 +109,13 @@ with tab2:
                 drawing_mode="point",
                 key="canvas_estetica",
             )
-        except FileNotFoundError:
-            st.error(f"⚠️ Erro: O arquivo '{imagem_path}' não foi encontrado no seu GitHub.")
+        except Exception as e:
+            st.error(f"Não foi possível carregar a imagem '{imagem_path}'. Verifique se ela é um PNG válido.")
+            st.exception(e)
 
     with c_form:
         st.markdown("### 📝 Nova Medida")
         if canvas_result.json_data and canvas_result.json_data["objects"]:
-            # Captura a última marcação
             ponto = canvas_result.json_data["objects"][-1]
             x, y = int(ponto["left"]), int(ponto["top"])
             
@@ -129,7 +126,6 @@ with tab2:
             prega_mm = st.number_input("Prega Cutânea (mm)", min_value=0.0, step=0.1)
             
             if st.button("Salvar Medida na Planilha"):
-                # Estrutura para salvar na aba 'Medidas'
                 nova_medida = pd.DataFrame([{
                     "Data": pd.Timestamp.now().strftime("%d/%m/%Y %H:%M"),
                     "Paciente": paciente_selecionado,
@@ -141,15 +137,14 @@ with tab2:
                 }])
                 
                 try:
-                    # Tenta gravar na aba 'Medidas'
                     conn.create(worksheet="Medidas", data=nova_medida)
                     st.balloons()
                     st.success("Medida gravada com sucesso!")
                 except:
-                    st.error("Erro ao salvar. Verifique se a planilha permite edição e se existe uma aba chamada 'Medidas'.")
+                    st.error("Erro ao salvar. Verifique se a planilha é 'Editor' e se existe a aba 'Medidas'.")
         else:
-            st.info("Clique em uma região da silhueta ao lado para habilitar o formulário de medidas.")
+            st.info("Clique na silhueta para marcar.")
 
 with tab3:
     st.subheader("Acompanhamento de Resultados")
-    st.write("Os dados salvos na aba 'Medidas' aparecerão aqui em formato de gráfico em breve.")
+    st.write("Dados históricos aparecerão aqui.")
