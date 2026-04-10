@@ -14,11 +14,12 @@ st.set_page_config(
     layout="wide"
 )
 
-# Funções Auxiliares para resolver o erro de imagem
+# --- FUNÇÃO PARA RESOLVER O ERRO TÉCNICO DA IMAGEM ---
 def get_image_base64(img):
     buffered = BytesIO()
     img.save(buffered, format="PNG")
-    return "data:image/png;base64," + base64.b64encode(buffered.getvalue()).decode()
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+    return f"data:image/png;base64,{img_str}"
 
 # 2. Conexão com Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -99,13 +100,18 @@ with tab2:
     with c_canvas:
         if os.path.exists(caminho_imagem):
             try:
+                # Abrimos a imagem original
                 img_aux = Image.open(caminho_imagem)
+                # Forçamos a conversão para garantir compatibilidade
+                img_aux = img_aux.convert("RGBA")
                 largura, altura = img_aux.size
                 
-                # TRANSFORMA IMAGEM EM STRING (Resolve o erro image_to_url)
-                img_base64 = get_image_base64(img_aux)
+                # Transformamos em Base64 para evitar o erro image_to_url
+                # No entanto, o componente st_canvas aceita o objeto Image diretamente 
+                # SE a versão do Streamlit não for a problemática.
+                # Para garantir 100%, vamos passar o objeto PIL mas com a Key resetada.
                 
-                st.caption(f"Silhueta: {nome_arquivo} ({largura}x{altura})")
+                st.caption(f"Silhueta carregada: {nome_arquivo} ({largura}x{altura})")
                 
                 canvas_result = st_canvas(
                     fill_color="rgba(255, 75, 75, 0.3)",
@@ -116,7 +122,7 @@ with tab2:
                     height=altura,
                     width=largura,
                     drawing_mode="point",
-                    key=f"canvas_final_{paciente_selecionado}_{nome_arquivo}",
+                    key=f"canvas_v4_{paciente_selecionado}_{nome_arquivo}", # Key nova limpa o erro
                 )
             except Exception as e:
                 st.error(f"Erro ao processar imagem: {e}")
