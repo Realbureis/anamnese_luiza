@@ -3,8 +3,7 @@ from streamlit_gsheets import GSheetsConnection
 from streamlit_drawable_canvas import st_canvas
 from PIL import Image
 import pandas as pd
-import os
-import base64
+import requests
 from io import BytesIO
 
 # 1. Configuração da Página
@@ -14,12 +13,18 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- FUNÇÃO PARA RESOLVER O ERRO TÉCNICO DA IMAGEM ---
-def get_image_base64(img):
-    buffered = BytesIO()
-    img.save(buffered, format="PNG")
-    img_str = base64.b64encode(buffered.getvalue()).decode()
-    return f"data:image/png;base64,{img_str}"
+# --- FUNÇÃO PARA CARREGAR IMAGEM DA NUVEM ---
+@st.cache_data
+def load_image_from_google_drive(file_id):
+    # Converte o ID do Drive em um link de download direto
+    url = f'https://drive.google.com/uc?id={file_id}'
+    try:
+        response = requests.get(url)
+        img = Image.open(BytesIO(response.content))
+        return img
+    except Exception as e:
+        st.error(f"Erro ao baixar imagem do Drive: {e}")
+        return None
 
 # 2. Conexão com Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -34,7 +39,7 @@ except Exception as e:
     st.error(f"Erro ao conectar com a planilha: {e}")
     st.stop()
 
-# 3. Tratamento e Mapeamento de Colunas
+# 3. Tratamento de Colunas
 df = df_bruto.rename(columns={
     'Nome completo': 'nome',
     'Sexo (Masculino)': 'sexo_m',
@@ -62,101 +67,85 @@ st.caption(f"Dados sincronizados via Tally | Última Anamnese: {dados['data_envi
 tab1, tab2, tab3 = st.tabs(["📋 Ficha de Anamnese", "📐 Mapa de Medidas", "📊 Evolução"])
 
 with tab1:
-    st.subheader("Informações Coletadas no Tally")
+    st.subheader("Informações da Anamnese")
     col1, col2, col3 = st.columns(3)
     with col1:
         st.info("🩺 Condições Clínicas")
         if str(dados.get('doenca_sim')).lower() in ['true', '1.0', '1', 'sim']:
-            st.error(f"**Doença Relatada:** {dados.get('doenca_detalhe', 'Ver na planilha')}")
+            st.error(f"**Doença:** {dados.get('doenca_detalhe', 'Relatada')}")
         else:
-            st.success("Nenhuma doença relatada.")
+            st.success("Sem doenças relatadas.")
     with col2:
-        st.info("⚠️ Alertas de Risco")
+        st.info("⚠️ Alertas")
         if str(dados.get('gravida_sim')).lower() in ['true', '1.0', '1', 'sim']:
-            st.warning("⚠️ Paciente Gestante ou Lactante")
+            st.warning("⚠️ Gestante/Lactante")
         if str(dados.get('alergia_sim')).lower() in ['true', '1.0', '1', 'sim']:
-            st.error(f"**ALERGIA:** {dados.get('alergia_detalhe', 'Ver na planilha')}")
-        else:
-            st.success("Sem alergias conhecidas.")
+            st.error(f"**ALERGIA:** {dados.get('alergia_detalhe', 'Relatada')}")
     with col3:
-        st.info("🎯 Queixa Principal")
+        st.info("🎯 Queixa")
         st.write(dados.get('queixa', 'Não informado'))
-    st.divider()
-    st.markdown("#### 📝 Detalhes da Rotina")
-    st.write(dados.get('28. Conte um pouco da sua rotina (trabalho, cuidados com a pele, alimentação...)', 'Informação não disponível.'))
 
 with tab2:
-    st.subheader("Marcação Corporal e Facial")
+    st.subheader("Marcação Corporal (Google Drive Cloud)")
+    
+    # IDs extraídos dos seus links
+    id_homem = "1nQTT0v1B5Ik5OMhOtC2YMEDlZEkB-Phf"
+    id_mulher = "1xppoQNIJKa0ZXJzNxDYEXiPPpKJ19eX7"
     
     is_masculino = str(dados.get('sexo_m')).lower() in ['true', '1.0', '1', 'sim']
-    nome_arquivo = "homem.png" if is_masculino else "mulher.png"
-    
-    diretorio_atual = os.path.dirname(os.path.abspath(__file__))
-    caminho_imagem = os.path.join(diretorio_atual, nome_arquivo)
+    id_final = id_homem if is_masculino else id_mulher
     
     c_canvas, c_form = st.columns([1.5, 1])
     canvas_result = None
 
     with c_canvas:
-        if os.path.exists(caminho_imagem):
-            try:
-                # Abrimos a imagem original
-                img_aux = Image.open(caminho_imagem)
-                # Forçamos a conversão para garantir compatibilidade
-                img_aux = img_aux.convert("RGBA")
-                largura, altura = img_aux.size
-                
-                # Transformamos em Base64 para evitar o erro image_to_url
-                # No entanto, o componente st_canvas aceita o objeto Image diretamente 
-                # SE a versão do Streamlit não for a problemática.
-                # Para garantir 100%, vamos passar o objeto PIL mas com a Key resetada.
-                
-                st.caption(f"Silhueta carregada: {nome_arquivo} ({largura}x{altura})")
-                
-                canvas_result = st_canvas(
-                    fill_color="rgba(255, 75, 75, 0.3)",
-                    stroke_width=2,
-                    stroke_color="#FF4B4B",
-                    background_image=img_aux, 
-                    update_streamlit=True,
-                    height=altura,
-                    width=largura,
-                    drawing_mode="point",
-                    key=f"canvas_v4_{paciente_selecionado}_{nome_arquivo}", # Key nova limpa o erro
-                )
-            except Exception as e:
-                st.error(f"Erro ao processar imagem: {e}")
+        bg_image = load_image_from_google_drive(id_final)
+        
+        if bg_image:
+            # Pegamos o tamanho da imagem que você redimensionou (400x733)
+            largura, altura = bg_image.size
+            
+            canvas_result = st_canvas(
+                fill_color="rgba(255, 75, 75, 0.3)",
+                stroke_width=2,
+                stroke_color="#FF4B4B",
+                background_image=bg_image,
+                update_streamlit=True,
+                height=altura,
+                width=largura,
+                drawing_mode="point",
+                key=f"canvas_drive_{paciente_selecionado}",
+            )
         else:
-            st.error(f"Arquivo não encontrado: {nome_arquivo}")
+            st.warning("Aguardando carregamento da silhueta do Google Drive...")
 
     with c_form:
         st.markdown("### 📝 Nova Medida")
-        if canvas_result is not None and canvas_result.json_data and canvas_result.json_data["objects"]:
+        if canvas_result and canvas_result.json_data and canvas_result.json_data["objects"]:
             ponto = canvas_result.json_data["objects"][-1]
             x, y = int(ponto["left"]), int(ponto["top"])
             st.success(f"📍 Ponto: X={x}, Y={y}")
-            regiao = st.text_input("Região do corpo", placeholder="Ex: Abdômen")
-            medida_cm = st.number_input("Medida (cm)", min_value=0.0, step=0.1)
-            prega_mm = st.number_input("Prega (mm)", min_value=0.0, step=0.1)
             
-            if st.button("Salvar Medida na Planilha"):
+            regiao = st.text_input("Região", placeholder="Ex: Abdômen")
+            medida = st.number_input("Medida (cm)", step=0.1)
+            
+            if st.button("Salvar Medida"):
                 nova_medida = pd.DataFrame([{
                     "Data": pd.Timestamp.now().strftime("%d/%m/%Y %H:%M"),
                     "Paciente": paciente_selecionado,
                     "Regiao": regiao,
-                    "Medida_cm": medida_cm,
-                    "Prega_mm": prega_mm,
+                    "Medida": medida,
                     "Coord_X": x, "Coord_Y": y
                 }])
                 try:
                     conn.create(worksheet="Medidas", data=nova_medida)
                     st.balloons()
-                    st.success("Salvo com sucesso!")
+                    st.success("Dados salvos na aba 'Medidas'!")
                 except:
-                    st.error("Erro ao salvar. Verifique se a aba 'Medidas' existe.")
+                    st.error("Erro ao salvar. Verifique se a aba 'Medidas' existe na planilha.")
         else:
-            st.info("Clique na silhueta para marcar.")
+            st.info("Clique na imagem para marcar um ponto.")
 
 with tab3:
-    st.subheader("Acompanhamento")
-    st.write("Dados históricos aparecerão aqui.")
+    st.subheader("Evolução")
+    st.write("Em breve: Gráficos de evolução histórica.")
