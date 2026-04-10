@@ -15,7 +15,6 @@ st.set_page_config(
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data():
-    # URL direta para corrigir o erro 'Spreadsheet must be specified'
     url = "https://docs.google.com/spreadsheets/d/1SzYK2ocbSLisKk5oxEyqANNS8m3wZ4gcoLGSiFMNsQM/edit?usp=sharing"
     return conn.read(spreadsheet=url, ttl="0")
 
@@ -90,11 +89,13 @@ with tab2:
     
     c_canvas, c_form = st.columns([1.5, 1])
     
+    # Inicializamos a variável para evitar o NameError
+    canvas_result = None
+
     with c_canvas:
-        # RESOLUÇÃO DO PROBLEMA DA IMAGEM: Try/Except + Conversão RGB
         try:
             img_aberta = Image.open(imagem_path)
-            bg_image = img_aberta.convert("RGB") # Remove metadados que causam erro
+            bg_image = img_aberta.convert("RGB")
             
             st.caption(f"Silhueta exibida: {'Masculina' if is_masculino else 'Feminina'}")
             
@@ -110,12 +111,12 @@ with tab2:
                 key="canvas_estetica",
             )
         except Exception as e:
-            st.error(f"Não foi possível carregar a imagem '{imagem_path}'. Verifique se ela é um PNG válido.")
-            st.exception(e)
+            st.error(f"Não foi possível carregar a imagem '{imagem_path}'. Verifique se ela está no GitHub.")
 
     with c_form:
         st.markdown("### 📝 Nova Medida")
-        if canvas_result.json_data and canvas_result.json_data["objects"]:
+        # Checagem segura: só executa se o canvas foi criado com sucesso
+        if canvas_result is not None and canvas_result.json_data and canvas_result.json_data["objects"]:
             ponto = canvas_result.json_data["objects"][-1]
             x, y = int(ponto["left"]), int(ponto["top"])
             
@@ -143,8 +144,8 @@ with tab2:
                 except:
                     st.error("Erro ao salvar. Verifique se a planilha é 'Editor' e se existe a aba 'Medidas'.")
         else:
-            st.info("Clique na silhueta para marcar.")
+            st.info("Clique na silhueta para marcar um ponto e registrar a medida.")
 
 with tab3:
     st.subheader("Acompanhamento de Resultados")
-    st.write("Dados históricos aparecerão aqui.")
+    st.write("Dados históricos aparecerão aqui conforme as medidas forem salvas.")
