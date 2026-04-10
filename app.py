@@ -3,6 +3,8 @@ from streamlit_gsheets import GSheetsConnection
 from streamlit_drawable_canvas import st_canvas
 from PIL import Image
 import pandas as pd
+import requests
+from io import BytesIO
 
 # 1. Configuração da Página
 st.set_page_config(
@@ -24,7 +26,7 @@ except Exception as e:
     st.error(f"Erro ao conectar com a planilha: {e}")
     st.stop()
 
-# 3. Tratamento e Mapeamento de Colunas (Interface Original)
+# 3. Tratamento e Mapeamento de Colunas (Interface Original Mantida)
 df = df_bruto.rename(columns={
     'Nome completo': 'nome',
     'Sexo (Masculino)': 'sexo_m',
@@ -86,25 +88,31 @@ with tab2:
     
     is_masculino = str(dados.get('sexo_m')).lower() in ['true', '1.0', '1', 'sim']
     
-    # CORREÇÃO DA IMAGEM: Usando link RAW direto para não dar erro de atributo
+    # URL RAW para garantir o acesso
     url_base = "https://raw.githubusercontent.com/Realbureis/anamnese_luiza/main/"
     url_imagem = f"{url_base}{'homem.png' if is_masculino else 'mulher.png'}"
     
     c_canvas, c_form = st.columns([1.5, 1])
     
     with c_canvas:
-        # Passando a URL direto para o st_canvas ignorar o bug interno do Streamlit
-        canvas_result = st_canvas(
-            fill_color="rgba(255, 75, 75, 0.3)",
-            stroke_width=2,
-            stroke_color="#FF4B4B",
-            background_image=url_imagem, 
-            update_streamlit=True,
-            height=733,
-            width=400,
-            drawing_mode="point",
-            key=f"canvas_estetica_{paciente_selecionado}",
-        )
+        try:
+            # Baixamos a imagem via código para evitar o erro de atributo
+            response = requests.get(url_imagem)
+            img_aberta = Image.open(BytesIO(response.content)).convert("RGBA")
+            
+            canvas_result = st_canvas(
+                fill_color="rgba(255, 75, 75, 0.3)",
+                stroke_width=2,
+                stroke_color="#FF4B4B",
+                background_image=img_aberta, # Agora passamos a imagem real carregada
+                update_streamlit=True,
+                height=733,
+                width=400,
+                drawing_mode="point",
+                key=f"canvas_estetica_{paciente_selecionado}",
+            )
+        except Exception as e:
+            st.error(f"Erro ao carregar silhueta: {e}")
 
     with c_form:
         st.markdown("### 📝 Nova Medida")
