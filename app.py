@@ -5,21 +5,32 @@ from PIL import Image
 import pandas as pd
 
 # 1. Configuração da Página
-st.set_page_config(page_title="BioEstética - Dashboard", layout="wide")
+st.set_page_config(
+    page_title="BioEstética - Dashboard Luiza",
+    page_icon="🩺",
+    layout="wide"
+)
 
 # 2. Conexão com Google Sheets
-# No Streamlit Cloud, as credenciais devem estar nos 'Secrets'
+# O link da planilha será pego automaticamente dos Secrets configurados
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data():
-    return conn.read()
+    # ttl="0" força o Streamlit a buscar dados novos da planilha a cada refresh
+    return conn.read(ttl="0")
 
-df_bruto = load_data()
+try:
+    df_bruto = load_data()
+except Exception as e:
+    st.error(f"Erro ao conectar com a planilha: {e}")
+    st.stop()
 
-# 3. Limpeza de Colunas (Tratando os nomes gigantes do Tally)
-# Criamos um mapeamento para não ter que usar frases inteiras no código
+# 3. Tratamento de Dados (Mapeamento exato das colunas do seu Tally)
+# Usei os nomes que você me passou na lista anterior
 df = df_bruto.rename(columns={
     'Nome completo': 'nome',
+    'Sexo (Masculino)': 'sexo_m',
+    'Sexo (Feminino)': 'sexo_f',
     '1.Você possui alguma doença? (crônica, hormonal, autoimune) (Sim)': 'doenca_sim',
     'Se sim, qual?': 'doenca_detalhe',
     '6.Está grávida ou amamentando? (Sim)': 'gravida_sim',
@@ -29,97 +40,102 @@ df = df_bruto.rename(columns={
     'Submitted at': 'data_envio'
 })
 
-# Sidebar - Seleção de Paciente
-st.sidebar.image("https://cdn-icons-png.flaticon.com/512/3448/3448520.png", width=100)
-st.sidebar.title("Painel da Biomédica")
+# --- SIDEBAR ---
+st.sidebar.title("🩺 Gestão de Pacientes")
 lista_pacientes = df['nome'].unique()
-paciente_selecionado = st.sidebar.selectbox("Escolha o Paciente", lista_pacientes)
+paciente_selecionado = st.sidebar.selectbox("Selecione o Paciente", lista_pacientes)
 
-# Filtrar dados do paciente
+# Filtrar dados do paciente específico
 dados = df[df['nome'] == paciente_selecionado].iloc[0]
 
-# --- Interface Principal ---
-st.title(f"Paciente: {paciente_selecionado}")
-st.write(f"**Última atualização da anamnese:** {dados['data_envio']}")
+# --- CABEÇALHO ---
+st.title(f"Prontuário: {paciente_selecionado}")
+st.caption(f"Último envio da Anamnese: {dados['data_envio']}")
 
-tab1, tab2, tab3 = st.tabs(["📋 Ficha de Anamnese", "📐 Silhueta e Medidas", "📈 Evolução"])
+# --- TABS ---
+tab1, tab2, tab3 = st.tabs(["📋 Ficha Técnica", "📐 Medidas Corporais", "📊 Evolução"])
 
 with tab1:
-    st.subheader("Informações de Saúde")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.info("🩺 Condições Clínicas")
-        status_doenca = "⚠️ Sim" if dados['doenca_sim'] else "✅ Não"
-        st.write(f"**Doenças:** {status_doenca}")
-        if dados['doenca_sim']:
-            st.warning(dados['doenca_detalhe'])
-
-    with col2:
-        st.info("🚫 Alergias e Riscos")
-        status_alergia = "⚠️ Sim" if dados['alergia_sim'] else "✅ Não"
-        st.write(f"**Alergias:** {status_alergia}")
-        
-        status_gravida = "🛑 SIM" if dados['gravida_sim'] else "✅ Não"
-        st.write(f"**Gestante/Lactante:** {status_gravida}")
-
-    with col3:
-        st.info("🎯 Objetivo")
-        st.write(f"**Queixa Principal:** {dados['queixa']}")
-
-    st.divider()
-    st.write("**Resumo da Rotina:**")
-    st.caption(dados.get('28. Conte um pouco da sua rotina (trabalho, cuidados com a pele, alimentação...)', 'Não informado'))
-
-with tab2:
-    st.subheader("Mapeamento Corporal")
-    
-    c1, c2 = st.columns([1.5, 1])
+    st.subheader("Resumo Clínico (Tally)")
+    c1, c2, c3 = st.columns(3)
     
     with c1:
-        st.markdown("Clique na região desejada para registrar a medida:")
-        
-        # Tenta carregar a imagem da silhueta
-        try:
-            bg_image = Image.open("corpo.png")
+        st.info("🩺 Histórico")
+        if str(dados['doenca_sim']).lower() in ['true', '1.0', '1', 'sim']:
+            st.error(f"**Doença:** {dados.get('Se sim, qual?', 'Sim (ver planilha)')}")
+        else:
+            st.success("Sem doenças relatadas")
             
+    with c2:
+        st.info("⚠️ Riscos")
+        if str(dados['gravida_sim']).lower() in ['true', '1.0', '1', 'sim']:
+            st.warning("⚠️ Gestante/Lactante")
+        if str(dados['alergia_sim']).lower() in ['true', '1.0', '1', 'sim']:
+            st.error(f"**ALERGIA:** {dados.get('alergia_detalhe', 'Sim')}")
+        else:
+            st.success("Sem alergias relatadas")
+
+    with c3:
+        st.info("🎯 Queixa Principal")
+        st.write(dados['queixa'])
+
+with tab2:
+    st.subheader("Mapeamento na Silhueta")
+    
+    # Lógica de Silhueta Dinâmica
+    # Verifica se a coluna Masculino é verdadeira
+    is_masc = str(dados['sexo_m']).lower() in ['true', '1.0', '1', 'sim']
+    img_path = "homem.png" if is_masc else "mulher.png"
+    
+    col_canvas, col_form = st.columns([1.5, 1])
+    
+    with col_canvas:
+        try:
+            bg_image = Image.open(img_path)
             canvas_result = st_canvas(
-                fill_color="rgba(255, 75, 75, 0.3)",  # Cor do círculo de marcação
+                fill_color="rgba(255, 75, 75, 0.4)",
                 stroke_width=2,
                 stroke_color="#FF4B4B",
                 background_image=bg_image,
                 update_streamlit=True,
-                height=650,
+                height=700,
                 width=450,
                 drawing_mode="point",
-                key="canvas_corpo",
+                key="canvas_medidas",
             )
         except FileNotFoundError:
-            st.error("Erro: Arquivo 'corpo.png' não encontrado no repositório.")
+            st.error(f"Arquivo {img_path} não encontrado no GitHub.")
 
-    with c2:
-        st.write("### Nova Medida")
+    with col_form:
+        st.markdown("### Registrar Medida")
         if canvas_result.json_data and canvas_result.json_data["objects"]:
-            # Captura o último ponto clicado
             last_point = canvas_result.json_data["objects"][-1]
-            x, y = last_point["left"], last_point["top"]
+            x, y = int(last_point["left"]), int(last_point["top"])
             
-            st.success(f"Ponto capturado! (X: {int(x)}, Y: {int(y)})")
+            st.markdown(f"📍 **Ponto:** X:{x}, Y:{y}")
+            regiao = st.text_input("Região", placeholder="Ex: Abdômen")
+            valor = st.number_input("Medida (cm)", step=0.1)
+            prega = st.number_input("Prega (mm)", step=0.1)
             
-            regiao = st.text_input("Região (ex: Abdômen, Braço Dir.)", key="reg")
-            valor = st.number_input("Medida em cm", min_value=0.0, step=0.1)
-            prega = st.number_input("Prega Cutânea (mm)", min_value=0.0, step=0.1)
-            
-            if st.button("Salvar na Planilha"):
-                # Aqui você adicionaria a lógica para salvar em uma nova aba 'Medidas'
-                st.balloons()
-                st.write(f"Salvando: {regiao} - {valor}cm no banco de dados...")
+            if st.button("Salvar Medida"):
+                # Para salvar, você precisa criar uma aba chamada 'Medidas' na planilha
+                nova_linha = pd.DataFrame([{
+                    "Data": pd.Timestamp.now().strftime("%d/%m/%Y"),
+                    "Paciente": paciente_selecionado,
+                    "Regiao": regiao,
+                    "Medida": valor,
+                    "Prega": prega,
+                    "X": x, "Y": y
+                }])
+                try:
+                    conn.create(worksheet="Medidas", data=nova_linha)
+                    st.success("Salvo com sucesso!")
+                    st.balloons()
+                except:
+                    st.error("Erro ao salvar. Verifique se a planilha está como 'Editor' e se existe a aba 'Medidas'.")
         else:
-            st.info("Clique na imagem ao lado para habilitar a edição.")
+            st.info("Clique na imagem para marcar.")
 
 with tab3:
-    st.subheader("Histórico de Resultados")
-    st.write("Aqui aparecerão os gráficos de evolução assim que as medidas forem salvas na aba de Medidas.")
-    # Exemplo de gráfico futuro:
-    # st.line_chart(df_medidas_filtrado)
+    st.subheader("Histórico")
+    st.write("Dados da aba 'Medidas' aparecerão aqui em breve.")
