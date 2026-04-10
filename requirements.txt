@@ -3,3 +3,4 @@ streamlit-gsheets-connection
 streamlit-drawable-canvas
 Pillow
 pandas
+requests
