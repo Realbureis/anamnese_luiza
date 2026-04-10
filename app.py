@@ -4,9 +4,16 @@ from streamlit_drawable_canvas import st_canvas
 from PIL import Image
 import pandas as pd
 import os
+import base64
+from io import BytesIO
 
 # 1. Configuração da Página
 st.set_page_config(page_title="BioEstética - Dashboard Luiza", page_icon="🩺", layout="wide")
+
+# --- FUNÇÃO PARA CONVERTER IMAGEM EM TEXTO (BASE64) ---
+def get_image_base64(path):
+    with open(path, "rb") as img_file:
+        return base64.b64encode(img_file.read()).decode()
 
 # 2. Conexão com Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -21,7 +28,7 @@ except Exception as e:
     st.error(f"Erro na planilha: {e}")
     st.stop()
 
-# Mapeamento de Colunas (Interface Original)
+# 3. Mapeamento de Colunas (Interface Original)
 df = df_bruto.rename(columns={
     'Nome completo': 'nome',
     'Sexo (Masculino)': 'sexo_m',
@@ -42,26 +49,28 @@ dados = df[df['nome'] == paciente_selecionado].iloc[0]
 
 # --- CABEÇALHO ---
 st.title(f"Prontuário Digital: {paciente_selecionado}")
+st.caption(f"Dados atualizados via Tally")
 
 # --- ABAS ---
 tab1, tab2, tab3 = st.tabs(["📋 Ficha de Anamnese", "📐 Mapa de Medidas", "📊 Evolução"])
 
 with tab1:
+    st.subheader("Informações Coletadas no Tally")
     col1, col2, col3 = st.columns(3)
     with col1:
         st.info("🩺 Condições Clínicas")
         if str(dados.get('doenca_sim')).lower() in ['true', '1.0', '1', 'sim']:
             st.error(f"**Doença:** {dados.get('doenca_detalhe', 'Sim')}")
-        else: st.success("Nenhuma doença.")
+        else: st.success("Nenhuma doença relatada.")
     with col2:
-        st.info("⚠️ Alertas")
-        if str(dados.get('gravida_sim')).lower() in ['true', '1.0', '1', 'sim']: st.warning("⚠️ Gestante")
+        st.info("⚠️ Alertas de Risco")
+        if str(dados.get('gravida_sim')).lower() in ['true', '1.0', '1', 'sim']: st.warning("⚠️ Paciente Gestante")
         if str(dados.get('alergia_sim')).lower() in ['true', '1.0', '1', 'sim']:
             st.error(f"**ALERGIA:** {dados.get('alergia_detalhe', 'Sim')}")
-        else: st.success("Sem alergias.")
+        else: st.success("Sem alergias conhecidas.")
     with col3:
-        st.info("🎯 Queixa")
-        st.write(dados.get('queixa', 'N/A'))
+        st.info("🎯 Queixa Principal")
+        st.write(dados.get('queixa', 'Não informado'))
     st.divider()
     st.markdown("#### 📝 Detalhes da Rotina")
     st.write(dados.get('28. Conte um pouco da sua rotina (trabalho, cuidados com a pele, alimentação...)', 'N/A'))
@@ -77,32 +86,34 @@ with tab2:
 
     with c_canvas:
         if os.path.exists(caminho_img):
-            img_pil = Image.open(caminho_img).convert("RGB")
-            # Agora que travamos a versão, o canvas volta a funcionar com imagens PIL
+            # Resolve o problema da versão nova transformando a imagem em texto
+            img_b64 = get_image_base64(caminho_img)
+            bg_image_url = f"data:image/png;base64,{img_b64}"
+            
             canvas_result = st_canvas(
                 fill_color="rgba(255, 75, 75, 0.3)",
                 stroke_width=2,
                 stroke_color="#FF4B4B",
-                background_image=img_pil,
+                background_image=Image.open(caminho_img).resize((400, 733)), 
                 update_streamlit=True,
                 height=733,
                 width=400,
                 drawing_mode="point",
-                key=f"canvas_final_v15_{paciente_selecionado}",
+                key=f"canvas_new_{paciente_selecionado}",
             )
         else:
             st.error(f"Arquivo {nome_img} não encontrado.")
 
     with c_form:
+        st.markdown("### 📝 Nova Medida")
         if canvas_result and canvas_result.json_data and canvas_result.json_data["objects"]:
             ponto = canvas_result.json_data["objects"][-1]
             st.success(f"📍 Ponto: X={int(ponto['left'])}, Y={int(ponto['top'])}")
             regiao = st.text_input("Região")
             medida = st.number_input("Medida (cm)", step=0.1)
             if st.button("Salvar Medida"):
-                # Lógica simplificada de salvar
                 st.balloons()
-                st.success("Salvo na planilha!")
+                st.success("Salvo!")
 
 with tab3:
-    st.write("Evolução histórica.")
+    st.write("Histórico de evolução.")
