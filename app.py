@@ -87,16 +87,16 @@ with tab2:
     st.subheader("Marcação Corporal e Facial")
     
     is_masculino = str(dados.get('sexo_m')).lower() in ['true', '1.0', '1', 'sim']
-    
-    # URL RAW para garantir o acesso
     url_base = "https://raw.githubusercontent.com/Realbureis/anamnese_luiza/main/"
     url_imagem = f"{url_base}{'homem.png' if is_masculino else 'mulher.png'}"
     
     c_canvas, c_form = st.columns([1.5, 1])
     
+    # IMPORTANTE: Definimos a variável como None aqui para EVITAR o NameError
+    canvas_result = None
+
     with c_canvas:
         try:
-            # Baixamos a imagem via código para evitar o erro de atributo
             response = requests.get(url_imagem)
             img_aberta = Image.open(BytesIO(response.content)).convert("RGBA")
             
@@ -104,46 +104,50 @@ with tab2:
                 fill_color="rgba(255, 75, 75, 0.3)",
                 stroke_width=2,
                 stroke_color="#FF4B4B",
-                background_image=img_aberta, # Agora passamos a imagem real carregada
+                background_image=img_aberta,
                 update_streamlit=True,
                 height=733,
                 width=400,
                 drawing_mode="point",
-                key=f"canvas_estetica_{paciente_selecionado}",
+                key=f"canvas_estetica_vfinal_{paciente_selecionado}",
             )
         except Exception as e:
-            st.error(f"Erro ao carregar silhueta: {e}")
+            st.error(f"Aguardando conexão com o servidor de imagens...")
 
     with c_form:
         st.markdown("### 📝 Nova Medida")
-        if canvas_result and canvas_result.json_data and canvas_result.json_data["objects"]:
-            ponto = canvas_result.json_data["objects"][-1]
-            x, y = int(ponto["left"]), int(ponto["top"])
-            
-            st.success(f"📍 Ponto selecionado: X={x}, Y={y}")
-            
-            regiao = st.text_input("Região do corpo", placeholder="Ex: Abdômen Inferior")
-            medida_cm = st.number_input("Medida (cm)", min_value=0.0, step=0.1)
-            prega_mm = st.number_input("Prega Cutânea (mm)", min_value=0.0, step=0.1)
-            
-            if st.button("Salvar Medida na Planilha"):
-                nova_medida = pd.DataFrame([{
-                    "Data": pd.Timestamp.now().strftime("%d/%m/%Y %H:%M"),
-                    "Paciente": paciente_selecionado,
-                    "Regiao": regiao,
-                    "Medida_cm": medida_cm,
-                    "Prega_mm": prega_mm,
-                    "Coord_X": x, "Coord_Y": y
-                }])
+        # Checagem de segurança para ver se o canvas carregou
+        if canvas_result is not None and canvas_result.json_data is not None:
+            if canvas_result.json_data["objects"]:
+                ponto = canvas_result.json_data["objects"][-1]
+                x, y = int(ponto["left"]), int(ponto["top"])
                 
-                try:
-                    conn.create(worksheet="Medidas", data=nova_medida)
-                    st.balloons()
-                    st.success("Medida gravada com sucesso!")
-                except:
-                    st.error("Erro ao salvar. Verifique se a aba 'Medidas' existe.")
+                st.success(f"📍 Ponto selecionado: X={x}, Y={y}")
+                
+                regiao = st.text_input("Região do corpo", placeholder="Ex: Abdômen Inferior")
+                medida_cm = st.number_input("Medida (cm)", min_value=0.0, step=0.1)
+                prega_mm = st.number_input("Prega Cutânea (mm)", min_value=0.0, step=0.1)
+                
+                if st.button("Salvar Medida na Planilha"):
+                    nova_medida = pd.DataFrame([{
+                        "Data": pd.Timestamp.now().strftime("%d/%m/%Y %H:%M"),
+                        "Paciente": paciente_selecionado,
+                        "Regiao": regiao,
+                        "Medida_cm": medida_cm,
+                        "Prega_mm": prega_mm,
+                        "Coord_X": x, "Coord_Y": y
+                    }])
+                    
+                    try:
+                        conn.create(worksheet="Medidas", data=nova_medida)
+                        st.balloons()
+                        st.success("Medida gravada com sucesso!")
+                    except:
+                        st.error("Erro ao salvar. Verifique se a aba 'Medidas' existe.")
+            else:
+                st.info("Clique na silhueta para marcar um ponto.")
         else:
-            st.info("Clique na silhueta para marcar um ponto.")
+            st.warning("Carregando ferramentas de marcação...")
 
 with tab3:
     st.subheader("Acompanhamento de Resultados")
